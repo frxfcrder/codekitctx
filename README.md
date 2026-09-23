@@ -1,4 +1,4 @@
-# repoctx
+# codekitctx
 
 Codebase Context Compiler as a Python Library & FastAPI Service.
 Turn your codebase into AI-ready context.
