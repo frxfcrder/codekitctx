@@ -1,6 +1,6 @@
 from enum import Enum
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Literal, Optional
 from pydantic import BaseModel, Field
 
 
@@ -22,12 +22,15 @@ class ContextRequest(BaseModel):
     stats: bool = True
     prompt: bool = False
     compact: bool = False
-    format: str = "markdown"  # "markdown" or "json"
-    include: List[str] = Field(default_factory=list)
-    exclude: List[str] = Field(default_factory=list)
-    max_size: int = 1_048_576  # 1 MB
-    files: List[str] = Field(default_factory=list)
+    format: Literal["markdown", "json"] = "markdown"
+    include: List[str] = Field(default_factory=list, max_length=200)
+    exclude: List[str] = Field(default_factory=list, max_length=200)
+    max_size: int = Field(default=1_048_576, ge=0, le=50_000_000)
+    files: List[str] = Field(default_factory=list, max_length=1000)
     allow_sensitive: bool = False
+    max_files: int = Field(default=10_000, ge=1, le=50_000)
+    max_total_size: int = Field(default=200_000_000, ge=1_000_000, le=2_000_000_000)
+    max_depth: int = Field(default=32, ge=1, le=128)
 
 
 class FileEntry(BaseModel):

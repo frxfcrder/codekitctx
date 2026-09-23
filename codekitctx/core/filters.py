@@ -1,7 +1,7 @@
 from pathlib import Path
 from typing import List, Optional, Tuple
 from pathspec import PathSpec
-from pathspec.patterns import GitWildMatchPattern
+from pathspec.patterns.gitignore.spec import GitIgnoreSpecPattern
 
 from codekitctx.models import SkipReason
 
@@ -13,12 +13,12 @@ class FilterManager:
         exclude: Optional[List[str]] = None,
     ):
         self.include_spec = (
-            PathSpec.from_lines(GitWildMatchPattern, include)
+            PathSpec.from_lines(GitIgnoreSpecPattern, include)
             if include
             else None
         )
         self.exclude_spec = (
-            PathSpec.from_lines(GitWildMatchPattern, exclude)
+            PathSpec.from_lines(GitIgnoreSpecPattern, exclude)
             if exclude
             else None
         )

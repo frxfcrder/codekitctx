@@ -1,11 +1,17 @@
+import os
+
 import pytest
 from fastapi.testclient import TestClient
 
+from codekitctx import server
 from codekitctx.server import app
 
 
 @pytest.fixture
-def client():
+def client(tmp_path, monkeypatch):
+    monkeypatch.setenv(server.ALLOWED_ROOTS_ENV, str(tmp_path))
+    monkeypatch.delenv(server.API_KEY_ENV, raising=False)
+    server.rate_limit_buckets.clear()
     return TestClient(app)
 
 
@@ -73,13 +79,12 @@ class TestCompile:
         data = resp.json()
         assert "expert AI software engineer" in data["context"]
 
-    def test_compile_invalid_path(self, client):
+    def test_compile_invalid_path_returns_400(self, client):
         resp = client.post(
             "/compile",
             json={"repo_path": "/nonexistent/path/xyz"},
         )
-        assert resp.status_code == 200
-        assert resp.json()["files_scanned"] == 0
+        assert resp.status_code == 400
 
     def test_compile_compact(self, client, sample_repo):
         resp = client.post(

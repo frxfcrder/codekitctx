@@ -140,11 +140,14 @@ class RepoContext:
     def compile(self, **kwargs) -> ContextResult:
         req = ContextRequest(repo_path=self.repo_path, **kwargs)
 
-        # Stage 1: Scan
-        scanned_files, total_scanned, total_skipped, warnings = Scan(req).execute()
+        # Stage 1: Scan (returns all entries, including scanner-skipped ones)
+        scanned_entries, total_scanned, total_skipped, warnings = Scan(req).execute()
+        scanner_skipped = [f for f in scanned_entries if f.is_skipped]
+        to_filter = [f for f in scanned_entries if not f.is_skipped]
 
         # Stage 2: Filter
-        included, all_skipped = Filter(req.include, req.exclude).execute(scanned_files, [])
+        included, filter_skipped = Filter(req.include, req.exclude).execute(to_filter, [])
+        all_skipped = scanner_skipped + filter_skipped
 
         # Stage 3: Parse
         parsed_files = Parse(req.compact).execute(included)

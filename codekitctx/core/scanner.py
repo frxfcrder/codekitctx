@@ -3,7 +3,7 @@ from pathlib import Path
 from typing import List, Optional, Set, Tuple
 
 from pathspec import PathSpec
-from pathspec.patterns.gitwildmatch import GitWildMatchPattern
+from pathspec.patterns.gitignore.spec import GitIgnoreSpecPattern
 
 from codekitctx.models import ContextRequest, FileEntry, SkipReason
 
@@ -22,10 +22,10 @@ class RepositoryScanner:
             with open(gitignore_file, "r", encoding="utf-8", errors="ignore") as f:
                 ignore_patterns.extend(line.strip() for line in f if line.strip())
 
-        self.ignore_spec = PathSpec.from_lines(GitWildMatchPattern, ignore_patterns)
-        self.include_spec = PathSpec.from_lines(GitWildMatchPattern, req.include) if req.include else None
-        self.exclude_spec = PathSpec.from_lines(GitWildMatchPattern, req.exclude) if req.exclude else None
-        self.sensitive_spec = PathSpec.from_lines(GitWildMatchPattern, SENSITIVE_PATTERNS)
+        self.ignore_spec = PathSpec.from_lines(GitIgnoreSpecPattern, ignore_patterns)
+        self.include_spec = PathSpec.from_lines(GitIgnoreSpecPattern, req.include) if req.include else None
+        self.exclude_spec = PathSpec.from_lines(GitIgnoreSpecPattern, req.exclude) if req.exclude else None
+        self.sensitive_spec = PathSpec.from_lines(GitIgnoreSpecPattern, SENSITIVE_PATTERNS)
         self.requested_files: Optional[Set[str]] = (
             {p.replace("\\", "/").lstrip("./") for p in req.files} if req.files else None
         )
@@ -40,12 +40,29 @@ class RepositoryScanner:
         else:
             candidates = self._walk_candidates()
 
+        if len(candidates) > self.req.max_files:
+            self.warnings.append(
+                f"Scan limit reached: {self.req.max_files} files (truncating)"
+            )
+            candidates = candidates[: self.req.max_files]
+
+        total_bytes = 0
         for full_path, rel_str in candidates:
+            if total_bytes >= self.req.max_total_size:
+                self.warnings.append(
+                    f"Total size limit reached ({self.req.max_total_size} bytes): remaining files skipped"
+                )
+                entry = self._skipped_entry(full_path, rel_str, 0, SkipReason.TOO_LARGE)
+                entries.append(entry)
+                skipped += 1
+                continue
+
             entry, skip_reason = self._process_file(full_path, rel_str, explicit=self.requested_files is not None)
             if skip_reason is not None:
                 skipped += 1
             else:
                 scanned += 1
+                total_bytes += entry.size_bytes
             entries.append(entry)
 
         return entries, scanned, skipped
@@ -55,7 +72,7 @@ class RepositoryScanner:
         assert self.requested_files is not None
         for rel in sorted(self.requested_files):
             full_path = (self.root_path / rel).resolve()
-            if not str(full_path).startswith(str(self.root_path)):
+            if not full_path.is_relative_to(self.root_path):
                 self.warnings.append(f"Skipped path outside repository: {rel}")
                 continue
             if not full_path.is_file():
@@ -68,12 +85,18 @@ class RepositoryScanner:
         candidates: List[Tuple[Path, str]] = []
         for root, dirs, filenames in os.walk(self.root_path):
             rel_root = Path(root).relative_to(self.root_path)
+            if len(rel_root.parts) >= self.req.max_depth:
+                dirs[:] = []
+                continue
             dirs[:] = [d for d in dirs if not self._is_ignored(rel_root / d, is_dir=True)]
 
             for filename in filenames:
                 rel_path = rel_root / filename
                 rel_str = str(rel_path).replace("\\", "/")
                 full_path = Path(root) / filename
+                if not full_path.resolve().is_relative_to(self.root_path):
+                    self.warnings.append(f"Skipped symlink escaping repository: {rel_str}")
+                    continue
                 candidates.append((full_path, rel_str))
         return candidates
 
