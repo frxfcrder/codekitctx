@@ -1,5 +1,7 @@
 # CodeKitCtx
 
+![CodeKitCtx Banner](assets/banner.png)
+
 Codebase Context Compiler — turn repositories into AI-ready context.
 
 Scans a codebase, computes stats and a file tree, extracts symbols via tree-sitter, and compiles everything into Markdown or JSON for LLM prompts.
