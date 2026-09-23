@@ -2,10 +2,11 @@ import ipaddress
 import logging
 import os
 import secrets
+import sys
 import time
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Callable, List, Optional
+from typing import Callable, List, Optional, Tuple
 
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -80,13 +81,60 @@ def redact_sensitive_path(path_str: str) -> str:
     return path_str
 
 
+def _host_from_uvicorn_lifespan() -> Optional[str]:
+    try:
+        from uvicorn.lifespan.on import LifespanOn
+    except ImportError:
+        return None
+    frame = sys._getframe(1)
+    while frame is not None:
+        frame_self = frame.f_locals.get("self")
+        if isinstance(frame_self, LifespanOn):
+            host = getattr(frame_self.config, "host", None)
+            return str(host) if host else ""
+        frame = frame.f_back
+    return None
+
+
+def _host_from_argv(argv: Optional[List[str]] = None) -> Optional[str]:
+    if argv is None:
+        argv = sys.argv
+    if not argv:
+        return None
+    argv0 = os.path.basename(argv[0]).lower()
+    if not (argv0.startswith("uvicorn") or argv0 in ("uvicorn.exe", "__main__.py")):
+        return None
+    for i, arg in enumerate(argv[1:], start=1):
+        if arg == "--host" and i + 1 < len(argv):
+            return argv[i + 1]
+        if arg.startswith("--host="):
+            value = arg.split("=", 1)[1]
+            if value:
+                return value
+    return None
+
+
+def resolve_bind_host() -> Tuple[str, bool]:
+    lifespan_host = _host_from_uvicorn_lifespan()
+    if lifespan_host is not None:
+        return lifespan_host, True
+    argv_host = _host_from_argv()
+    if argv_host is not None:
+        return argv_host, True
+    env_host = os.environ.get(BIND_HOST_ENV, "127.0.0.1")
+    return env_host, False
+
+
 def enforce_startup_security() -> None:
-    bind_host = os.environ.get(BIND_HOST_ENV, "127.0.0.1")
+    bind_host, under_uvicorn = resolve_bind_host()
     api_key = get_api_key()
+
+    if under_uvicorn and not bind_host:
+        bind_host = ""
 
     if not is_loopback_address(bind_host) and not api_key:
         raise RuntimeError(
-            f"Refusing to start: bound to non-loopback host '{bind_host}' without "
+            f"Refusing to start: bound to non-loopback host '{bind_host or 'unknown'}' without "
             f"{API_KEY_ENV}. Set an API key or bind to 127.0.0.1."
         )
 

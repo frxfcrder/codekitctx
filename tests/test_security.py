@@ -214,17 +214,23 @@ class TestSafeMode:
 
 class TestStartupSecurity:
     def test_refuses_non_loopback_without_key(self, monkeypatch):
+        monkeypatch.setattr(server, "_host_from_uvicorn_lifespan", lambda: None)
+        monkeypatch.setattr(server, "_host_from_argv", lambda argv=None: None)
         monkeypatch.setenv(server.BIND_HOST_ENV, "0.0.0.0")
         monkeypatch.delenv(server.API_KEY_ENV, raising=False)
         with pytest.raises(RuntimeError, match="Refusing to start"):
             server.enforce_startup_security()
 
     def test_allows_non_loopback_with_key(self, monkeypatch):
+        monkeypatch.setattr(server, "_host_from_uvicorn_lifespan", lambda: None)
+        monkeypatch.setattr(server, "_host_from_argv", lambda argv=None: None)
         monkeypatch.setenv(server.BIND_HOST_ENV, "0.0.0.0")
         monkeypatch.setenv(server.API_KEY_ENV, "somekey")
         server.enforce_startup_security()
 
     def test_allows_loopback_without_key(self, monkeypatch):
+        monkeypatch.setattr(server, "_host_from_uvicorn_lifespan", lambda: None)
+        monkeypatch.setattr(server, "_host_from_argv", lambda argv=None: None)
         monkeypatch.setenv(server.BIND_HOST_ENV, "127.0.0.1")
         monkeypatch.delenv(server.API_KEY_ENV, raising=False)
         server.enforce_startup_security()
@@ -236,6 +242,61 @@ class TestStartupSecurity:
         assert server.is_loopback_address("192.168.1.1") is False
         assert server.is_loopback_address("0.0.0.0") is False
         assert server.is_loopback_address("evil.example.com") is False
+
+    def test_argv_host_flag_beats_env(self, monkeypatch):
+        monkeypatch.delenv(server.BIND_HOST_ENV, raising=False)
+        monkeypatch.delenv(server.API_KEY_ENV, raising=False)
+        monkeypatch.setattr(server, "_host_from_uvicorn_lifespan", lambda: None)
+        monkeypatch.setattr(
+            server.sys, "argv", ["uvicorn", "codekitctx.server:app", "--host", "0.0.0.0"]
+        )
+        assert server.resolve_bind_host() == ("0.0.0.0", True)
+        with pytest.raises(RuntimeError, match="Refusing to start"):
+            server.enforce_startup_security()
+
+    def test_argv_host_equals_form(self, monkeypatch):
+        monkeypatch.delenv(server.BIND_HOST_ENV, raising=False)
+        monkeypatch.setattr(server, "_host_from_uvicorn_lifespan", lambda: None)
+        monkeypatch.setattr(
+            server.sys, "argv", ["uvicorn", "codekitctx.server:app", "--host=0.0.0.0"]
+        )
+        assert server.resolve_bind_host()[0] == "0.0.0.0"
+
+    def test_argv_loopback_flag_allows_no_key(self, monkeypatch):
+        monkeypatch.delenv(server.BIND_HOST_ENV, raising=False)
+        monkeypatch.delenv(server.API_KEY_ENV, raising=False)
+        monkeypatch.setattr(server, "_host_from_uvicorn_lifespan", lambda: None)
+        monkeypatch.setattr(
+            server.sys, "argv", ["uvicorn", "codekitctx.server:app", "--host", "127.0.0.1"]
+        )
+        server.enforce_startup_security()
+
+    def test_non_uvicorn_argv_ignored(self, monkeypatch):
+        monkeypatch.setenv(server.BIND_HOST_ENV, "127.0.0.1")
+        monkeypatch.setattr(server, "_host_from_uvicorn_lifespan", lambda: None)
+        monkeypatch.setattr(server.sys, "argv", ["pytest", "--host", "0.0.0.0"])
+        assert server.resolve_bind_host() == ("127.0.0.1", False)
+
+    def test_fail_closed_when_lifespan_host_missing(self, monkeypatch):
+        monkeypatch.delenv(server.API_KEY_ENV, raising=False)
+        monkeypatch.setattr(server, "_host_from_uvicorn_lifespan", lambda: "")
+        monkeypatch.setattr(server, "_host_from_argv", lambda argv=None: None)
+        with pytest.raises(RuntimeError, match="Refusing to start"):
+            server.enforce_startup_security()
+
+    def test_lifespan_host_used_when_present(self, monkeypatch):
+        monkeypatch.delenv(server.BIND_HOST_ENV, raising=False)
+        monkeypatch.delenv(server.API_KEY_ENV, raising=False)
+        monkeypatch.setattr(server, "_host_from_uvicorn_lifespan", lambda: "0.0.0.0")
+        assert server.resolve_bind_host() == ("0.0.0.0", True)
+        with pytest.raises(RuntimeError, match="Refusing to start"):
+            server.enforce_startup_security()
+
+    def test_env_fallback_when_not_under_uvicorn(self, monkeypatch):
+        monkeypatch.setattr(server, "_host_from_uvicorn_lifespan", lambda: None)
+        monkeypatch.setattr(server, "_host_from_argv", lambda argv=None: None)
+        monkeypatch.setenv(server.BIND_HOST_ENV, "127.0.0.1")
+        assert server.resolve_bind_host() == ("127.0.0.1", False)
 
 
 class TestTrustedHost:

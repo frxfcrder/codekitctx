@@ -103,6 +103,7 @@ curl -H "Authorization: Bearer $CODEKITCTX_API_KEY" -X POST http://127.0.0.1:800
 - No key set + localhost → open (dev mode, warning logged)
 - Key set → required on `/compile*` (missing → 401, wrong → 403)
 - Non-loopback bind (`--host 0.0.0.0`) + no key → **refuses to start**
+- Startup check uses the **actual bind host** (uvicorn `--host` / `uvicorn.run` / `UVICORN_HOST` fallback) — not env alone
 
 ## Library Usage
 
