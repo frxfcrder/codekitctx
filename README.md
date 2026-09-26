@@ -128,6 +128,28 @@ ctx = AsyncRepoContext("./my-repo")
 result = await ctx.compile_async()
 ```
 
+## Architecture
+
+codekitctx is organized as a code-to-context pipeline:
+
+```text
+Scan → Filter → Analyze → Compile → Deliver
+```
+
+| Stage | What it does |
+|---|---|
+| **Scan** | Walk the repo (`RepositoryScanner`); skip sensitive/oversized files; collect warnings |
+| **Filter** | Apply `include` / `exclude` / `--files` glob rules (`FilterManager`) |
+| **Analyze** | **Parse** symbols via tree-sitter (signatures when compact), **Stats** (LOC/languages), **Tree** (directory layout) |
+| **Compile** | Render Markdown or JSON (`compiler/`), optional AI prompt wrap |
+| **Deliver** | Terminal (default), `-o` file, or `-c` clipboard |
+
+Stages are implemented as small classes in [`codekitctx/core/context.py`](codekitctx/core/context.py) (`Scan` → `Filter` → `Parse` → `Stats` → `Tree` → `Compile`), orchestrated by `RepoContext.compile()`.
+
+For a visual overview of the project architecture:
+
+**[View the codekitctx architecture diagram on GitDiagram](https://gitdiagram.com/frxfcrder/codekitctx)**
+
 ## Supported Languages
 
 Python, TypeScript, JavaScript, Rust, Go, Java, C, C++, C#, Ruby
